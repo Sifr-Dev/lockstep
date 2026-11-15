@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"net/http"
@@ -130,13 +131,9 @@ func TestServeStopsOnContextCancellation(t *testing.T) {
 }
 
 func TestHelpIsNotAnError(t *testing.T) {
-	if _, err := parseCLIOptions([]string{"--help"}, io.Discard); !errorsIsFlagHelp(err) {
+	if _, err := parseCLIOptions([]string{"--help"}, io.Discard); !errors.Is(err, flag.ErrHelp) {
 		t.Fatalf("parseCLIOptions(--help) error = %v, want flag.ErrHelp", err)
 	}
-}
-
-func errorsIsFlagHelp(err error) bool {
-	return err == flag.ErrHelp
 }
 
 func waitForServerURL(t *testing.T, output *lockedBuffer) string {

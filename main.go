@@ -24,7 +24,6 @@ const defaultAddress = "127.0.0.1:8080"
 type options struct {
 	address  string
 	withHTTP bool
-	apiOnly  bool
 }
 
 type apiServer struct {
@@ -113,7 +112,7 @@ func parseServeOptions(arguments []string, errorOutput io.Writer) (options, erro
 		fmt.Fprintln(errorOutput, "Serve the in-memory HTTP API until interrupted.")
 	}
 
-	parsed := options{apiOnly: true}
+	parsed := options{}
 	flags.StringVar(&parsed.address, "addr", defaultAddress, "HTTP API listen address")
 	if err := flags.Parse(arguments); err != nil {
 		return options{}, err
@@ -181,6 +180,9 @@ func (server *apiServer) url() string {
 
 func (server *apiServer) shutdown(ctx context.Context) error {
 	shutdownErr := server.server.Shutdown(ctx)
+	if shutdownErr != nil {
+		_ = server.server.Close()
+	}
 	serveErr := <-server.serveErr
 	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return serveErr

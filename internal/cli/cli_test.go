@@ -2,7 +2,10 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -91,6 +94,19 @@ func TestCLIRunReportsCommandErrorsAndStopsOnQuit(t *testing.T) {
 	}
 	if strings.Contains(text, "added task 2") {
 		t.Fatalf("command after quit was executed: %q", text)
+	}
+}
+
+func TestCLIRunContextStopsWhenCanceled(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer writer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	terminal := cli.New(taskmanager.NewManager(), reader, io.Discard)
+
+	if err := terminal.RunContext(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunContext() error = %v, want context.Canceled", err)
 	}
 }
 

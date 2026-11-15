@@ -72,6 +72,20 @@ func (manager *Manager) List() []Task {
 	return tasks
 }
 
+// Get returns one task by ID.
+func (manager *Manager) Get(id int) (Task, error) {
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+
+	for _, task := range manager.tasks {
+		if task.ID == id {
+			return task, nil
+		}
+	}
+
+	return Task{}, ErrTaskNotFound
+}
+
 // Toggle changes a task between pending and done and returns a value copy.
 func (manager *Manager) Toggle(id int) (Task, error) {
 	manager.mu.Lock()

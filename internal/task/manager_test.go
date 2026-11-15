@@ -52,6 +52,22 @@ func TestManagerListReturnsIndependentSnapshot(t *testing.T) {
 	}
 }
 
+func TestManagerGetsTasksByID(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.Add("Find me")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := manager.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if found != created {
+		t.Fatalf("Get() = %+v, want %+v", found, created)
+	}
+}
+
 func TestManagerCompletesTasksIdempotently(t *testing.T) {
 	manager := NewManager()
 	created, err := manager.Add("Complete me")
@@ -108,6 +124,9 @@ func TestManagerTogglesAndDeletesTasks(t *testing.T) {
 func TestManagerReportsMissingTasks(t *testing.T) {
 	manager := NewManager()
 
+	if _, err := manager.Get(404); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("Get() error = %v, want ErrTaskNotFound", err)
+	}
 	if _, err := manager.Toggle(404); !errors.Is(err, ErrTaskNotFound) {
 		t.Fatalf("Toggle() error = %v, want ErrTaskNotFound", err)
 	}

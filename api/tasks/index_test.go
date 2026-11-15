@@ -3,9 +3,11 @@ package handler_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	handler "github.com/mohamedsalahi/task_manager_cli/api/tasks"
@@ -41,6 +43,9 @@ func TestHandlerCreateListsAndMutatesSharedManager(t *testing.T) {
 	if contentType := created.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", contentType)
 	}
+	if cacheControl := created.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Cache-Control = %q, want %q", cacheControl, "no-store")
+	}
 
 	var createBody taskEnvelope
 	decodeJSON(t, created, &createBody)
@@ -49,6 +54,16 @@ func TestHandlerCreateListsAndMutatesSharedManager(t *testing.T) {
 	}
 	if len(manager.List()) != 1 {
 		t.Fatalf("manager task count = %d, want 1", len(manager.List()))
+	}
+
+	fetched := requestJSON(t, server, http.MethodGet, created.Header().Get("Location"), "")
+	if fetched.Code != http.StatusOK {
+		t.Fatalf("GET created task status = %d, want %d; body = %s", fetched.Code, http.StatusOK, fetched.Body.String())
+	}
+	var fetchedBody taskEnvelope
+	decodeJSON(t, fetched, &fetchedBody)
+	if fetchedBody.Task != createBody.Task {
+		t.Fatalf("fetched task = %+v, want %+v", fetchedBody.Task, createBody.Task)
 	}
 
 	listed := requestJSON(t, server, http.MethodGet, "/api/tasks", "")
@@ -80,6 +95,19 @@ func TestHandlerCreateListsAndMutatesSharedManager(t *testing.T) {
 	}
 	if len(manager.List()) != 0 {
 		t.Fatalf("manager task count after delete = %d, want 0", len(manager.List()))
+	}
+}
+
+func TestHandlerReturnsAnEmptyJSONList(t *testing.T) {
+	manager := taskmanager.NewManager()
+	server := handler.NewHandler(manager)
+
+	response := requestJSON(t, server, http.MethodGet, "/api/tasks", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if response.Body.String() != `{"tasks":[]}` {
+		t.Fatalf("GET body = %q, want %q", response.Body.String(), `{"tasks":[]}`)
 	}
 }
 
@@ -199,7 +227,7 @@ func TestHandlerItemValidationAndMissingTasks(t *testing.T) {
 		assertError(t, response, "invalid_id")
 	}
 
-	for _, method := range []string{http.MethodPatch, http.MethodDelete} {
+	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
 		response := requestJSON(t, server, method, "/api/tasks/404", "")
 		if response.Code != http.StatusNotFound {
 			t.Fatalf("%s status = %d, want %d", method, response.Code, http.StatusNotFound)
@@ -219,7 +247,7 @@ func TestHandlerRejectsUnsupportedMethods(t *testing.T) {
 		wantCode  string
 	}{
 		{method: http.MethodPut, path: "/api/tasks", wantAllow: "GET, POST", wantCode: "method_not_allowed"},
-		{method: http.MethodPost, path: "/api/tasks/1", wantAllow: "PATCH, DELETE", wantCode: "method_not_allowed"},
+		{method: http.MethodPost, path: "/api/tasks/1", wantAllow: "GET, PATCH, DELETE", wantCode: "method_not_allowed"},
 	}
 
 	for _, test := range tests {
@@ -234,6 +262,122 @@ func TestHandlerRejectsUnsupportedMethods(t *testing.T) {
 			assertError(t, response, test.wantCode)
 		})
 	}
+}
+
+func TestHandlerReturnsStructuredErrorsForUnknownRoutes(t *testing.T) {
+	manager := taskmanager.NewManager()
+	server := handler.NewHandler(manager)
+
+	for _, path := range []string{"/unknown", "/api/tasks/1/extra"} {
+		response := requestJSON(t, server, http.MethodGet, path, "")
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("GET %s status = %d, want %d; body = %s", path, response.Code, http.StatusNotFound, response.Body.String())
+		}
+		assertError(t, response, "route_not_found")
+	}
+}
+
+func TestHandlerDoesNotAdvertiseCrossOriginOrHeadOperations(t *testing.T) {
+	manager := taskmanager.NewManager()
+	server := handler.NewHandler(manager)
+
+	response := requestJSON(t, server, http.MethodOptions, "/api/tasks", "")
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("OPTIONS status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if allow := response.Header().Get("Allow"); allow != "GET, POST" {
+		t.Fatalf("Allow = %q, want %q", allow, "GET, POST")
+	}
+	if origin := response.Header().Get("Access-Control-Allow-Origin"); origin != "" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", origin)
+	}
+	assertError(t, response, "method_not_allowed")
+
+	response = requestJSON(t, server, http.MethodHead, "/api/tasks/1", "")
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("HEAD status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if allow := response.Header().Get("Allow"); allow != "GET, PATCH, DELETE" {
+		t.Fatalf("Allow = %q, want %q", allow, "GET, PATCH, DELETE")
+	}
+}
+
+func TestHandlerRejectsOversizedChunkedTrailingValue(t *testing.T) {
+	manager := taskmanager.NewManager()
+	server := handler.NewHandler(manager)
+
+	body := `{"title":"Valid"}{"padding":"` + strings.Repeat("x", 70<<10) + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.ContentLength = -1
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
+	assertError(t, response, "request_too_large")
+	if len(manager.List()) != 0 {
+		t.Fatalf("oversized request changed manager state")
+	}
+}
+
+func TestHandlerCreatesTasksConcurrently(t *testing.T) {
+	manager := taskmanager.NewManager()
+	server := handler.NewHandler(manager)
+	const count = 50
+
+	ids := make(chan int, count)
+	errorsFound := make(chan error, count)
+	var waitGroup sync.WaitGroup
+	for index := 0; index < count; index++ {
+		waitGroup.Add(1)
+		go func(number int) {
+			defer waitGroup.Done()
+			request := httptest.NewRequest(http.MethodPost, "/api/tasks", strings.NewReader(`{"title":"Concurrent task"}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, request)
+			if response.Code != http.StatusCreated {
+				errorsFound <- fmt.Errorf("status = %d, want %d", response.Code, http.StatusCreated)
+				return
+			}
+			var body taskEnvelope
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				errorsFound <- fmt.Errorf("decode response: %w", err)
+				return
+			}
+			ids <- body.Task.ID
+		}(index)
+	}
+	waitGroup.Wait()
+	close(ids)
+	close(errorsFound)
+
+	for err := range errorsFound {
+		t.Error(err)
+	}
+	seen := make(map[int]struct{}, count)
+	for id := range ids {
+		if _, duplicate := seen[id]; duplicate {
+			t.Errorf("duplicate task ID %d", id)
+		}
+		seen[id] = struct{}{}
+	}
+	if len(seen) != count || len(manager.List()) != count {
+		t.Fatalf("unique IDs = %d, manager tasks = %d, want %d", len(seen), len(manager.List()), count)
+	}
+}
+
+func TestPackageHandlerServesTheFunctionEntryPoint(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
+	response := httptest.NewRecorder()
+	handler.Handler(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d; body = %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body listEnvelope
+	decodeJSON(t, response, &body)
 }
 
 func requestJSON(t *testing.T, server http.Handler, method, path, body string, contentType ...string) *httptest.ResponseRecorder {

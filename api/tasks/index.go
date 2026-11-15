@@ -45,6 +45,7 @@ func NewHandler(manager *taskmanager.Manager) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/tasks", api.handleCollection)
 	mux.HandleFunc("/api/tasks/{id}", api.handleItem)
+	mux.HandleFunc("/", api.handleNotFound)
 	return mux
 }
 
@@ -73,14 +74,20 @@ func (api *API) handleCollection(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) handleItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		api.getTask(w, r)
 	case http.MethodPatch:
 		api.toggleTask(w, r)
 	case http.MethodDelete:
 		api.deleteTask(w, r)
 	default:
-		w.Header().Set("Allow", "PATCH, DELETE")
+		w.Header().Set("Allow", "GET, PATCH, DELETE")
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 	}
+}
+
+func (api *API) handleNotFound(w http.ResponseWriter, _ *http.Request) {
+	writeError(w, http.StatusNotFound, "route_not_found", "route not found")
 }
 
 func (api *API) listTasks(w http.ResponseWriter) {
@@ -104,8 +111,7 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request) {
 
 	var request createTaskRequest
 	if err := decoder.Decode(&request); err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
+		if isMaxBytesError(err) {
 			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
 			return
 		}
@@ -113,6 +119,10 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if isMaxBytesError(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_json", "request body must contain exactly one JSON object")
 		return
 	}
@@ -129,6 +139,25 @@ func (api *API) createTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", "/api/tasks/"+strconv.Itoa(created.ID))
 	writeJSON(w, http.StatusCreated, taskResponse{Task: created})
+}
+
+func (api *API) getTask(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseTaskID(w, r)
+	if !ok {
+		return
+	}
+
+	found, err := api.manager.Get(id)
+	if err != nil {
+		if errors.Is(err, taskmanager.ErrTaskNotFound) {
+			writeError(w, http.StatusNotFound, "task_not_found", taskmanager.ErrTaskNotFound.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "internal_error", "task could not be read")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, taskResponse{Task: found})
 }
 
 func (api *API) toggleTask(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +195,11 @@ func (api *API) deleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func isMaxBytesError(err error) bool {
+	var maxBytesError *http.MaxBytesError
+	return errors.As(err, &maxBytesError)
 }
 
 func parseTaskID(w http.ResponseWriter, r *http.Request) (int, bool) {

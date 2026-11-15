@@ -247,6 +247,7 @@ func TestHandlerRejectsUnsupportedMethods(t *testing.T) {
 		wantCode  string
 	}{
 		{method: http.MethodPut, path: "/api/tasks", wantAllow: "GET, POST", wantCode: "method_not_allowed"},
+		{method: http.MethodPatch, path: "/api/tasks?id=1", wantAllow: "GET, POST", wantCode: "method_not_allowed"},
 		{method: http.MethodPost, path: "/api/tasks/1", wantAllow: "GET, PATCH, DELETE", wantCode: "method_not_allowed"},
 	}
 
@@ -405,6 +406,9 @@ func decodeJSON(t *testing.T, response *httptest.ResponseRecorder, target any) {
 func assertError(t *testing.T, response *httptest.ResponseRecorder, wantCode string) {
 	t.Helper()
 
+	if cacheControl := response.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Cache-Control = %q, want %q", cacheControl, "no-store")
+	}
 	var body errorEnvelope
 	decodeJSON(t, response, &body)
 	if body.Error.Code != wantCode {

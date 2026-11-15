@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -39,21 +40,47 @@ func New(manager *taskmanager.Manager, input io.Reader, output io.Writer) *CLI {
 
 // Run reads commands until EOF or the quit command.
 func (cli *CLI) Run() error {
+	return cli.RunContext(context.Background())
+}
+
+// RunContext reads commands until EOF, the quit command, or context cancellation.
+func (cli *CLI) RunContext(ctx context.Context) error {
 	fmt.Fprintln(cli.output, "SIFR task manager // in-memory session")
 	fmt.Fprintln(cli.output, usage)
 
 	scanner := bufio.NewScanner(cli.input)
 	scanner.Buffer(make([]byte, 1024), 64<<10)
-	for scanner.Scan() {
-		if err := cli.Execute(scanner.Text()); err != nil {
-			if errors.Is(err, ErrExit) {
-				return nil
+	lines := make(chan string)
+	scanResult := make(chan error, 1)
+
+	go func() {
+		defer close(lines)
+		for scanner.Scan() {
+			select {
+			case lines <- scanner.Text():
+			case <-ctx.Done():
+				return
 			}
-			fmt.Fprintf(cli.output, "error: %v\n", err)
+		}
+		scanResult <- scanner.Err()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case line, open := <-lines:
+			if !open {
+				return <-scanResult
+			}
+			if err := cli.Execute(line); err != nil {
+				if errors.Is(err, ErrExit) {
+					return nil
+				}
+				fmt.Fprintf(cli.output, "error: %v\n", err)
+			}
 		}
 	}
-
-	return scanner.Err()
 }
 
 // Execute runs one command line.

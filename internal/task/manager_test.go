@@ -28,7 +28,7 @@ func TestManagerAddsValidatedTasks(t *testing.T) {
 func TestManagerRejectsInvalidTitles(t *testing.T) {
 	manager := NewManager()
 
-	for _, title := range []string{"", "   ", "line\nbreak", strings.Repeat("x", MaxTitleRunes+1)} {
+	for _, title := range []string{"", "   ", "line\nbreak", "right\u202eoverride", strings.Repeat("x", MaxTitleRunes+1)} {
 		if _, err := manager.Add(title); !errors.Is(err, ErrInvalidTitle) {
 			t.Fatalf("Add(%q) error = %v, want ErrInvalidTitle", title, err)
 		}
@@ -49,6 +49,30 @@ func TestManagerListReturnsIndependentSnapshot(t *testing.T) {
 	fresh := manager.List()
 	if fresh[0].Title != created.Title || fresh[0].Status != StatusPending {
 		t.Fatalf("List() exposed mutable manager state: %+v", fresh[0])
+	}
+}
+
+func TestManagerCompletesTasksIdempotently(t *testing.T) {
+	manager := NewManager()
+	created, err := manager.Add("Complete me")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completed, err := manager.Complete(created.ID)
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if completed.Status != StatusDone {
+		t.Fatalf("Status = %q, want %q", completed.Status, StatusDone)
+	}
+
+	completedAgain, err := manager.Complete(created.ID)
+	if err != nil {
+		t.Fatalf("second Complete() error = %v", err)
+	}
+	if completedAgain.Status != StatusDone {
+		t.Fatalf("second Status = %q, want %q", completedAgain.Status, StatusDone)
 	}
 }
 
@@ -86,6 +110,9 @@ func TestManagerReportsMissingTasks(t *testing.T) {
 
 	if _, err := manager.Toggle(404); !errors.Is(err, ErrTaskNotFound) {
 		t.Fatalf("Toggle() error = %v, want ErrTaskNotFound", err)
+	}
+	if _, err := manager.Complete(404); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("Complete() error = %v, want ErrTaskNotFound", err)
 	}
 	if err := manager.Delete(404); !errors.Is(err, ErrTaskNotFound) {
 		t.Fatalf("Delete() error = %v, want ErrTaskNotFound", err)

@@ -92,6 +92,22 @@ func (manager *Manager) Toggle(id int) (Task, error) {
 	return Task{}, ErrTaskNotFound
 }
 
+// Complete marks a task as done without changing it if it is already done.
+func (manager *Manager) Complete(id int) (Task, error) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+
+	for index := range manager.tasks {
+		if manager.tasks[index].ID != id {
+			continue
+		}
+		manager.tasks[index].Status = StatusDone
+		return manager.tasks[index], nil
+	}
+
+	return Task{}, ErrTaskNotFound
+}
+
 // Delete removes a task by ID.
 func (manager *Manager) Delete(id int) error {
 	manager.mu.Lock()
@@ -112,7 +128,7 @@ func validTitle(title string) bool {
 		return false
 	}
 	for _, character := range title {
-		if unicode.IsControl(character) {
+		if !unicode.IsPrint(character) {
 			return false
 		}
 	}

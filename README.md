@@ -1,4 +1,9 @@
-![SIFR identity V2 — the cipher disk at shift zero](.github/assets/readme-header-dark.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/banner-dark.svg">
+    <img alt="task_manager_cli — built from zero" src=".github/banner-light.svg" width="100%">
+  </picture>
+</p>
 
 # `task_manager_cli`
 

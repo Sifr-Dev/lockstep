@@ -22,8 +22,14 @@ func TestTaskManagerUsage(t *testing.T) {
 		t.Fatalf("expected status 'pending', got %s", task.Status)
 	}
 
-	updated := tm.Toggle(task.ID)
-	if updated == nil || updated.Status != "done" {
+	updated, ok := tm.Toggle(task.ID)
+	if !ok || updated.Status != "done" {
 		t.Fatal("expected task to be toggled to 'done'")
+	}
+	if !tm.Delete(task.ID) {
+		t.Fatal("expected task to be deleted")
+	}
+	if _, ok := tm.Get(task.ID); ok {
+		t.Fatal("task still present after delete")
 	}
 }

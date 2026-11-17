@@ -1,97 +1,76 @@
+// Package handler: JSON HTTP surface. Shares internal.TaskManager — no copies.
+// GET list · POST create (201) · PATCH toggle ?id=N · DELETE ?id=N
+// status codes: 200 list/toggle/delete, 201 create, 400 bad input, 404 missing, 405 wrong verb
 package handler
 
 import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
-	"sync"
+
+	"github.com/mohamedsalahi/task_manager_cli/internal"
 )
 
-type Task struct {
-	ID     int    `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
-}
-
-var (
-	tasks = []Task{
-		{ID: 1, Title: "Initialize neural network", Status: "done"},
-		{ID: 2, Title: "Deploy microservices", Status: "pending"},
-	}
-	nextId  = 3
-	taskMux sync.Mutex
-)
-
-func Handler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method == "GET" {
-		taskMux.Lock()
-		json.NewEncoder(w).Encode(tasks)
-		taskMux.Unlock()
-		return
-	}
-
-	if r.Method == "POST" {
-		var reqBody struct {
-			Title string `json:"title"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil || reqBody.Title == "" {
-			http.Error(w, `{"error":"Title required"}`, http.StatusBadRequest)
+func Tasks(tm *internal.TaskManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 
-		taskMux.Lock()
-		newTask := Task{ID: nextId, Title: reqBody.Title, Status: "pending"}
-		nextId++
-		tasks = append(tasks, newTask)
-		taskMux.Unlock()
-
-		json.NewEncoder(w).Encode(newTask)
-		return
-	}
-
-	if r.Method == "PATCH" {
-		// Extremely simple path parser for /api/task?id=X since Vercel passes query params
-		idStr := r.URL.Query().Get("id")
-		if idStr == "" {
-            // fallback: check path, e.g. /api/tasks/1
-            parts := strings.Split(r.URL.Path, "/")
-            if len(parts) > 0 {
-                idStr = parts[len(parts)-1]
-            }
-        }
-
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			http.Error(w, `{"error":"Invalid ID"}`, http.StatusBadRequest)
-			return
+		idFromQuery := func() (int, bool) {
+			s := r.URL.Query().Get("id")
+			id, err := strconv.Atoi(s)
+			return id, err == nil
 		}
 
-		taskMux.Lock()
-		defer taskMux.Unlock()
-		for i, t := range tasks {
-			if t.ID == id {
-				if t.Status == "pending" {
-					tasks[i].Status = "done"
-				} else {
-					tasks[i].Status = "pending"
-				}
-				json.NewEncoder(w).Encode(tasks[i])
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(tm.List())
+		case http.MethodPost:
+			var body struct{ Title string `json:"title"` }
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Title == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "title required"})
 				return
 			}
+			t := tm.Add(body.Title)
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(t)
+		case http.MethodPatch:
+			id, ok := idFromQuery()
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "numeric id required (?id=N)"})
+				return
+			}
+			t, found := tm.Toggle(id)
+			if !found {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "no such task id"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(t)
+		case http.MethodDelete:
+			id, ok := idFromQuery()
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "numeric id required (?id=N)"})
+				return
+			}
+			if !tm.Delete(id) {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "no such task id"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]bool{"deleted": true})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
 		}
-
-		http.Error(w, `{"error":"Not found"}`, http.StatusNotFound)
-		return
 	}
 }

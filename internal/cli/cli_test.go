@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	handler "github.com/sifr-salahy/task_manager_cli/api/tasks"
-	"github.com/sifr-salahy/task_manager_cli/internal/cli"
-	taskmanager "github.com/sifr-salahy/task_manager_cli/internal/task"
+	handler "github.com/Sifr-Dev/task_manager_cli/api/tasks"
+	"github.com/Sifr-Dev/task_manager_cli/internal/cli"
+	taskmanager "github.com/Sifr-Dev/task_manager_cli/internal/task"
 )
 
 func TestCLIImplementsAdvertisedCommands(t *testing.T) {

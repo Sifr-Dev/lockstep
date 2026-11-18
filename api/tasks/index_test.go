@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	handler "github.com/Sifr-dev/task_manager_cli/api/tasks"
-	taskmanager "github.com/Sifr-dev/task_manager_cli/internal/task"
+	handler "github.com/Sifr-Dev/task_manager_cli/api/tasks"
+	taskmanager "github.com/Sifr-Dev/task_manager_cli/internal/task"
 )
 
 type errorEnvelope struct {

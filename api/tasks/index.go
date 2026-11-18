@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	taskmanager "github.com/Sifr-dev/task_manager_cli/internal/task"
+	taskmanager "github.com/Sifr-Dev/task_manager_cli/internal/task"
 )
 
 const maxRequestBodyBytes = 64 << 10

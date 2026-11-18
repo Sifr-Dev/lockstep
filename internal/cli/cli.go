@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	taskmanager "github.com/mohamedsalahi/task_manager_cli/internal/task"
+	taskmanager "github.com/sifr-salahy/task_manager_cli/internal/task"
 )
 
 var ErrExit = errors.New("exit")

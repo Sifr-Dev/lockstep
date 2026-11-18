@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	handler "github.com/Sifr-Dev/task_manager_cli/api/tasks"
-	"github.com/Sifr-Dev/task_manager_cli/internal/cli"
-	taskmanager "github.com/Sifr-Dev/task_manager_cli/internal/task"
+	handler "github.com/Sifr-Dev/lockstep/api/tasks"
+	"github.com/Sifr-Dev/lockstep/internal/cli"
+	taskmanager "github.com/Sifr-Dev/lockstep/internal/task"
 )
 
 func TestCLIImplementsAdvertisedCommands(t *testing.T) {

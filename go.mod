@@ -1,3 +1,3 @@
-module github.com/Sifr-Dev/task_manager_cli
+module github.com/Sifr-Dev/lockstep
 
 go 1.26.3

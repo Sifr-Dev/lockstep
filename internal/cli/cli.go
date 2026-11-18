@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	taskmanager "github.com/Sifr-Dev/task_manager_cli/internal/task"
+	taskmanager "github.com/Sifr-Dev/lockstep/internal/task"
 )
 
 var ErrExit = errors.New("exit")

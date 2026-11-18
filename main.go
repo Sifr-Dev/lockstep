@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	taskhttp "github.com/sifr-salahy/task_manager_cli/api/tasks"
-	"github.com/sifr-salahy/task_manager_cli/internal/cli"
-	taskmanager "github.com/sifr-salahy/task_manager_cli/internal/task"
+	taskhttp "github.com/Sifr-dev/task_manager_cli/api/tasks"
+	"github.com/Sifr-dev/task_manager_cli/internal/cli"
+	taskmanager "github.com/Sifr-dev/task_manager_cli/internal/task"
 )
 
 const defaultAddress = "127.0.0.1:8080"
